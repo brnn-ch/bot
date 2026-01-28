@@ -15,7 +15,7 @@ YETKILI_ROLLER = [1465050726576427263, 1465056480871845949]
 
 # --- KATEGORİ AYARI ---
 # Destek kanallarının açılacağı Ana Kategori ID'si
-TEK_KATEGORI_ID = 1466020562219302952 
+TEK_KATEGORI_ID = 1466025632931512331 
 # -------------------------------
 
 # --- KANAL KAPATMA BUTONU ---
@@ -87,3 +87,4 @@ class BanModal(discord.ui.Modal, title='Ban İtirazı'):
 class OneriModal(discord.ui.Modal, title='İstek ve Öneri'):
     konu = discord.ui.TextInput(label='Konu', style=discord.TextStyle.short, required=True)
     det
+
