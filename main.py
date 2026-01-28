@@ -8,7 +8,7 @@ from keep_alive import keep_alive
 TOKEN = os.environ.get("TOKEN")
 
 # Şikayet ve Ban İtirazlarının düşeceği TEK kanal ID'si
-LOG_KANALI_ID = 111111111111111111
+LOG_KANALI_ID = 1466003317426749588
 
 # Açılan gizli odaları (Öneri/Soru) görebilecek Yetkili Rol ID'si
 # (Eğer yoksa 0 bırak, sadece Yöneticiler görür)
@@ -145,4 +145,5 @@ async def panel_kur(ctx):
 
 # Web sunucusunu başlat ve botu çalıştır
 keep_alive()
+
 bot.run(TOKEN)
