@@ -7,33 +7,18 @@ from keep_alive import keep_alive
 # --- AYARLAR ---
 TOKEN = os.environ.get("TOKEN")
 
-# Şikayet ve Ban İtirazlarının düşeceği TEK kanal ID'si
-LOG_KANALI_ID = 1466003317426749588
+# --- ÖNEMLİ: YETKİLİ ROL LİSTESİ ---
+# Buraya gizli odaları görmesini istediğin rollerin ID'lerini virgülle ayırarak yaz.
+# Örnek: [111111111, 222222222] (Yönetim ve Üst Yetkili ID'leri)
+# Sunucu sahibi zaten her şeyi görür, onu eklemene gerek yok.
+YETKILI_ROLLER = [1465050726576427263, 1465056480871845949] 
 
-# Açılan gizli odaları (Öneri/Soru) görebilecek Yetkili Rol ID'si
-# (Eğer yoksa 0 bırak, sadece Yöneticiler görür)
-YETKILI_ROL_ID = 0
-# ---------------
+# --- KATEGORİ AYARI ---
+# Destek kanallarının açılacağı Ana Kategori ID'si
+TEK_KATEGORI_ID = 1466020562219302952 
+# -------------------------------
 
-# --- YARDIMCI FONKSİYONLAR ---
-
-# A) Log Kanalına Mesaj Atan Fonksiyon (Şikayet ve Ban için)
-async def loga_gonder(interaction, baslik, alanlar, renk):
-    channel = interaction.guild.get_channel(LOG_KANALI_ID)
-    if channel:
-        embed = discord.Embed(title=baslik, color=renk, timestamp=interaction.created_at)
-        embed.set_author(name=f"{interaction.user.display_name} ({interaction.user.id})", icon_url=interaction.user.avatar.url if interaction.user.avatar else None)
-        
-        for ad, deger in alanlar:
-            embed.add_field(name=ad, value=deger, inline=False)
-            
-        embed.set_footer(text="Destek Sistemi")
-        await channel.send(embed=embed)
-        await interaction.response.send_message("✅ Bildiriminiz yetkililere iletildi.", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ Log kanalı bulunamadı.", ephemeral=True)
-
-# B) Özel Kanal (Ticket) Açan Fonksiyon (Öneri ve Soru için)
+# --- KANAL KAPATMA BUTONU ---
 class TicketKapatView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -44,106 +29,61 @@ class TicketKapatView(discord.ui.View):
         await asyncio.sleep(5)
         await interaction.channel.delete()
 
-async def kanal_ac(interaction, baslik, konu, icerik, renk):
+# --- KANAL AÇMA FONKSİYONU ---
+async def kanal_ac(interaction, baslik_kodu, konu, icerik, renk):
+    # 1. Hedef Kategoriyi Bul
+    kategori = interaction.guild.get_channel(TEK_KATEGORI_ID)
+    
+    if kategori is None:
+        await interaction.response.send_message(f"❌ HATA: Kategori ID'si ({TEK_KATEGORI_ID}) bulunamadı!", ephemeral=True)
+        return
+
+    # 2. İzinleri Ayarla
     overwrites = {
         interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False), # Herkese kapat
         interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True) # Kullanıcıya aç
     }
     
-    # Yetkili rolü varsa ona da aç
-    if YETKILI_ROL_ID != 0:
-        role = interaction.guild.get_role(YETKILI_ROL_ID)
+    # LİSTEDEKİ TÜM YETKİLİ ROLLERE İZİN VER
+    # Listedeki her bir ID için döngü kuruyoruz
+    for rol_id in YETKILI_ROLLER:
+        role = interaction.guild.get_role(rol_id)
         if role:
+            # Bu role mesajları okuma ve yazma izni ver
             overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
-    channel_name = f"{baslik}-{interaction.user.name}"
-    channel = await interaction.guild.create_text_channel(name=channel_name, overwrites=overwrites)
+    # 3. Kanalı Oluştur
+    channel_name = f"{baslik_kodu}-{interaction.user.name}"
+    channel = await interaction.guild.create_text_channel(name=channel_name, category=kategori, overwrites=overwrites)
     
-    await interaction.response.send_message(f"✅ Sizin için özel kanal açıldı: {channel.mention}", ephemeral=True)
+    # 4. Bilgilendirme
+    await interaction.response.send_message(f"✅ Destek kanalı açıldı: {channel.mention}", ephemeral=True)
     
-    embed = discord.Embed(title=f"📩 Yeni {baslik}", description=f"**Konu:** {konu}\n**İçerik:** {icerik}", color=renk)
-    embed.set_footer(text="İşiniz bitince aşağıdaki butona basarak odayı kapatabilirsiniz.")
+    # 5. İçerik Mesajı
+    embed = discord.Embed(title=f"📩 Yeni Talep: {baslik_kodu.upper()}", description=f"**Konu:** {konu}\n**İçerik:** {icerik}", color=renk)
+    embed.set_footer(text="Yetkililer en kısa sürede dönüş yapacaktır.")
     
-    await channel.send(f"{interaction.user.mention}", embed=embed, view=TicketKapatView())
+    # Etiketlenecek rollerin metnini hazırla
+    etiketler = ""
+    for rol_id in YETKILI_ROLLER:
+        etiketler += f"<@&{rol_id}> "
 
-# --- MODALLAR (FORMLAR) ---
+    await channel.send(f"{interaction.user.mention} {etiketler}", embed=embed, view=TicketKapatView())
 
-# 1. Şikayet (Loga Gider)
+# --- MODALLAR ---
+
 class SikayetModal(discord.ui.Modal, title='Şikayet Bildirimi'):
-    kisi = discord.ui.TextInput(label='Şikayet Edilen Kişi/Durum', style=discord.TextStyle.short, required=True)
+    kisi = discord.ui.TextInput(label='Şikayet Edilen', style=discord.TextStyle.short, required=True)
     sebep = discord.ui.TextInput(label='Olayın Detayı', style=discord.TextStyle.paragraph, required=True)
     async def on_submit(self, interaction: discord.Interaction):
-        await loga_gonder(interaction, "🚨 Yeni Şikayet", [("Şikayet Edilen", self.kisi.value), ("Sebep", self.sebep.value)], discord.Color.red())
+        await kanal_ac(interaction, "sikayet", f"Şikayet Edilen: {self.kisi.value}", self.sebep.value, discord.Color.red())
 
-# 2. Ban İtiraz (Loga Gider)
 class BanModal(discord.ui.Modal, title='Ban İtirazı'):
     sebep = discord.ui.TextInput(label='Ban Sebebiniz', style=discord.TextStyle.short, required=True)
     savunma = discord.ui.TextInput(label='Savunmanız', style=discord.TextStyle.paragraph, required=True)
     async def on_submit(self, interaction: discord.Interaction):
-        await loga_gonder(interaction, "⚖️ Ban İtirazı", [("Ban Sebebi", self.sebep.value), ("Savunma", self.savunma.value)], discord.Color.dark_red())
+        await kanal_ac(interaction, "ban-itiraz", f"Ban Sebebi: {self.sebep.value}", self.savunma.value, discord.Color.dark_red())
 
-# 3. İstek & Öneri (KANAL AÇAR)
 class OneriModal(discord.ui.Modal, title='İstek ve Öneri'):
-    konu = discord.ui.TextInput(label='Öneri Konusu', style=discord.TextStyle.short, required=True)
-    detay = discord.ui.TextInput(label='Detaylı Açıklama', style=discord.TextStyle.paragraph, required=True)
-    async def on_submit(self, interaction: discord.Interaction):
-        await kanal_ac(interaction, "oneri", self.konu.value, self.detay.value, discord.Color.green())
-
-# 4. Ekstra Soru (KANAL AÇAR)
-class SoruModal(discord.ui.Modal, title='Yetkiliye Soru'):
-    soru = discord.ui.TextInput(label='Sorunuz Nedir?', style=discord.TextStyle.paragraph, required=True)
-    async def on_submit(self, interaction: discord.Interaction):
-        await kanal_ac(interaction, "soru", "Genel Soru", self.soru.value, discord.Color.blue())
-
-# --- ANA PANEL BUTONLARI ---
-class AnaPanel(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    # Üst Satır: Loga Gidenler (Şikayet & Ban)
-    @discord.ui.button(label="Şikayet Et", style=discord.ButtonStyle.danger, emoji="🚨", custom_id="btn_sikayet", row=0)
-    async def sikayet_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(SikayetModal())
-
-    @discord.ui.button(label="Ban İtiraz", style=discord.ButtonStyle.danger, emoji="⚖️", custom_id="btn_ban", row=0)
-    async def ban_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(BanModal())
-
-    # Alt Satır: Kanal Açanlar (Öneri & Soru)
-    @discord.ui.button(label="İstek & Öneri", style=discord.ButtonStyle.success, emoji="💡", custom_id="btn_oneri", row=1)
-    async def oneri_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(OneriModal())
-
-    @discord.ui.button(label="Ekstra Soru", style=discord.ButtonStyle.primary, emoji="❓", custom_id="btn_soru", row=1)
-    async def soru_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(SoruModal())
-
-# --- BOT BAŞLATMA ---
-class Bot(commands.Bot):
-    def __init__(self):
-        intents = discord.Intents.default()
-        intents.message_content = True
-        super().__init__(command_prefix="!", intents=intents)
-
-    async def on_ready(self):
-        print(f'{self.user} hazır!')
-        self.add_view(AnaPanel())
-        self.add_view(TicketKapatView())
-
-bot = Bot()
-
-@bot.command()
-async def panel_kur(ctx):
-    embed = discord.Embed(
-        title="Destek Merkezi",
-        description="Aşağıdaki butonları kullanarak işlem yapabilirsiniz.\n\n"
-                    "🚨 **Şikayet & Ban:** Form doldurulur, yetkililere log düşer.\n"
-                    "💬 **Öneri & Soru:** Size özel **canlı destek kanalı** açar.",
-        color=discord.Color.dark_theme()
-    )
-    await ctx.send(embed=embed, view=AnaPanel())
-
-# Web sunucusunu başlat ve botu çalıştır
-keep_alive()
-
-bot.run(TOKEN)
+    konu = discord.ui.TextInput(label='Konu', style=discord.TextStyle.short, required=True)
+    det
